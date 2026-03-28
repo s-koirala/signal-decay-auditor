@@ -31,6 +31,7 @@ from src.detectors.changepoint import (
     PELTDetector,
 )
 from src.detectors.regime import (
+    GARCHRegimeDetector,
     HMMRegimeDetector,
     MarkovRegimeDetector,
     label_signal_state,
@@ -109,6 +110,7 @@ _DETECTOR_MAP = {
 _REGIME_MAP = {
     "markov": MarkovRegimeDetector,
     "hmm": HMMRegimeDetector,
+    "garch": GARCHRegimeDetector,
 }
 
 

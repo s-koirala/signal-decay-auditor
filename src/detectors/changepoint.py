@@ -306,7 +306,8 @@ class PELTDetector(ChangePointDetector):
             pen = self.penalty
         else:
             n_params = self._MODEL_NPARAMS.get(self.model, 2)
-            pen = n_params * np.log(n)
+            sigma2 = np.var(arr)
+            pen = n_params * sigma2 * np.log(n)
 
         n_breaks = len(self._breakpoints)
         # Collect bootstrap breakpoint locations

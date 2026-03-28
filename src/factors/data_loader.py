@@ -310,14 +310,6 @@ class FactorDataLoader:
             corr, _ = stats.spearmanr(sub["factor"], sub["forward"])
             return corr
 
-        ic = aligned.rolling(window=window, min_periods=window).apply(
-            lambda _: _spearman_corr(
-                aligned.loc[_.index]  # type: ignore[arg-type]
-            ),
-            raw=False,
-        )
-        # rolling().apply works column-wise; take only one column's output.
-        # Instead, compute explicitly for clarity:
         ic_values = []
         dates = aligned.index
         for i in range(len(dates)):

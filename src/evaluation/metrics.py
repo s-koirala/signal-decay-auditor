@@ -86,6 +86,15 @@ def oos_r_squared(
     actual_arr = _to_array(actual)
     model_arr = _to_array(forecast_model)
 
+    # Validate: user-supplied model forecasts must not contain NaN.
+    if np.any(np.isnan(model_arr)):
+        raise ValueError(
+            "forecast_model contains NaN values. Model forecasts must be "
+            "fully specified (no missing values). If using an expanding-mean "
+            "benchmark, NaN at position 0 is acceptable for the benchmark "
+            "only, not for user-supplied forecasts."
+        )
+
     if forecast_benchmark is not None:
         bench_arr = _to_array(forecast_benchmark)
     else:
@@ -375,6 +384,8 @@ def giacomini_white_test(
     elif test_type == "conditional":
         # Regress d_t on instruments (with intercept), Wald test on all
         # coefficients including the intercept.
+        # Giacomini & White (2006) require HAC standard errors because
+        # loss differentials are serially correlated.
         q = Z_valid.shape[1]
         # Design matrix with intercept
         X = np.column_stack([np.ones(n), Z_valid])
@@ -399,17 +410,38 @@ def giacomini_white_test(
 
         beta = XtX_inv @ (X.T @ d_valid)
         residuals = d_valid - X @ beta
-        sigma2 = np.sum(residuals ** 2) / (n - k)
 
-        # Variance-covariance of beta
-        var_beta = sigma2 * XtX_inv
+        # --- HAC (Newey-West) variance estimation ---
+        # Bandwidth: floor(n^(1/3)), standard for Newey-West.
+        bandwidth = int(np.floor(n ** (1.0 / 3.0)))
+
+        # Compute the HAC long-run variance S_HAC of X'u using
+        # Bartlett kernel weights: w(j) = 1 - |j|/(bandwidth+1).
+        # The moment conditions are g_t = X_t * u_t (each row).
+        g = X * residuals[:, np.newaxis]  # (n, k) matrix of moment conditions
+
+        # Gamma_0: autocovariance at lag 0
+        S_hac = g.T @ g  # (k, k)
+
+        for j in range(1, bandwidth + 1):
+            # Bartlett kernel weight
+            w = 1.0 - j / (bandwidth + 1.0)
+            # Gamma_j: cross-product at lag j
+            Gamma_j = g[j:].T @ g[:-j]  # (k, k)
+            S_hac += w * (Gamma_j + Gamma_j.T)
+
+        S_hac /= n  # normalize
+
+        # HAC variance of beta: V_HAC = (X'X)^{-1} * n*S_HAC * (X'X)^{-1}
+        # (sandwich estimator)
+        var_beta = n * (XtX_inv @ S_hac @ XtX_inv)
 
         # Wald statistic: beta' * Var(beta)^{-1} * beta ~ chi²(k)
         try:
             var_beta_inv = np.linalg.inv(var_beta)
         except np.linalg.LinAlgError:
             logger.warning(
-                "Singular variance matrix in Giacomini-White Wald test."
+                "Singular HAC variance matrix in Giacomini-White Wald test."
             )
             return {"statistic": np.nan, "p_value": np.nan, "df": k}
 
@@ -866,12 +898,12 @@ def detect_decay_onset(
 
     if method == "cusum":
         # CUSUM for downward shift detection.
-        # S_t = sum_{s=1}^{t} (mu - x_s)  (positive when values drop)
+        # Uses expanding mean to avoid look-ahead bias: at each time t,
+        # mu(t) = mean(x[0:t]) rather than the full-sample mean.
         clean = valid_values[~np.isnan(valid_values)]
         if len(clean) < 2:
             return no_decay
 
-        mu = np.nanmean(valid_values)
         sigma = np.nanstd(valid_values, ddof=1)
 
         if sigma == 0.0:
@@ -880,8 +912,18 @@ def detect_decay_onset(
         # Critical value: 2 * sigma per Page (1954) / Hinkley (1971)
         critical = threshold if threshold is not None else 2.0 * sigma
 
-        # Cumulative sum of deviations (positive = values below mean)
-        cusum = np.nancumsum(mu - valid_values)
+        # Compute expanding mean at each t (using only data up to t)
+        # to eliminate look-ahead bias.
+        nan_mask = np.isnan(valid_values)
+        cumsum_vals = np.where(nan_mask, 0.0, valid_values)
+        cumsum_vals = np.cumsum(cumsum_vals)
+        cumcount = np.cumsum(~nan_mask).astype(np.float64)
+        # Avoid division by zero at positions with no valid data yet
+        expanding_mu = np.where(cumcount > 0, cumsum_vals / cumcount, 0.0)
+
+        # Cumulative sum of deviations (positive = values below expanding mean)
+        deviations = np.where(nan_mask, 0.0, expanding_mu - valid_values)
+        cusum = np.cumsum(deviations)
 
         # Find first time CUSUM exceeds the critical value
         exceedance = np.where(cusum > critical)[0]

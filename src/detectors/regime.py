@@ -77,8 +77,8 @@ class MarkovRegimeDetector:
     """Markov-switching regression detector for factor return regimes.
 
     Wraps ``statsmodels.tsa.regime_switching.MarkovRegression`` to fit
-    Hamilton (1989) regime-switching models with switching mean and/or
-    variance.
+    Hamilton (1989) regime-switching models with regime-dependent intercept
+    and optionally switching variance.
 
     Parameters
     ----------
@@ -91,10 +91,13 @@ class MarkovRegimeDetector:
         Whether regime-specific variances are estimated. Enabled by default
         because factor return volatility typically differs across regimes
         (e.g., crisis vs. calm periods).
-    switching_mean : bool, default True
-        Whether regime-specific means are estimated. Enabled by default as
-        the primary quantity of interest for signal decay detection is the
-        shift in expected returns across regimes.
+
+    Notes
+    -----
+    The intercept (mean) always switches across regimes in
+    ``statsmodels.MarkovRegression``. There is no option to disable
+    switching of the constant term, so no ``switching_mean`` parameter
+    is exposed.
 
     References
     ----------
@@ -113,11 +116,9 @@ class MarkovRegimeDetector:
         self,
         n_regimes: int = 2,
         switching_variance: bool = True,
-        switching_mean: bool = True,
     ):
         self.n_regimes = n_regimes
         self.switching_variance = switching_variance
-        self.switching_mean = switching_mean
 
         self._fitted_model = None
         self._smoothed_probabilities = None
@@ -173,9 +174,12 @@ class MarkovRegimeDetector:
                 )
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
-                    # Use different random seeds for each initialization
-                    np.random.seed(i * 42 + 7)
-                    fitted = model.fit(disp=False)
+                    # Generate random starting parameters using a local RNG
+                    # to avoid mutating global random state
+                    rng = np.random.default_rng(i * 42 + 7)
+                    start_params = model.start_params.copy()
+                    start_params += rng.normal(scale=0.1, size=start_params.shape)
+                    fitted = model.fit(disp=False, start_params=start_params)
 
                 if fitted.llf > best_llf:
                     best_llf = fitted.llf
@@ -196,7 +200,6 @@ class MarkovRegimeDetector:
 
         self._fitted_model = best_model
         self._smoothed_probabilities = best_model.smoothed_marginal_probabilities
-        self._transition_matrix = best_model.expected_durations  # placeholder; extract properly below
 
         # Extract regime means
         self._regime_means = np.array([
@@ -288,9 +291,9 @@ class MarkovRegimeDetector:
             p_ii = trans[k, k]
             expected_duration = 1.0 / (1.0 - p_ii) if p_ii < 1.0 else np.inf
             stats[k] = {
-                "mean": float(self._regime_means[k]),
-                "variance": float(self._regime_variances[k]),
-                "expected_duration": float(expected_duration),
+                "mean": float(np.asarray(self._regime_means[k]).flat[0]),
+                "variance": float(np.asarray(self._regime_variances[k]).flat[0]),
+                "expected_duration": float(np.asarray(expected_duration).flat[0]),
             }
         return stats
 
@@ -345,7 +348,6 @@ class MarkovRegimeDetector:
                 detector = MarkovRegimeDetector(
                     n_regimes=k,
                     switching_variance=self.switching_variance,
-                    switching_mean=self.switching_mean,
                 )
                 detector.fit(series)
                 bic = detector._fitted_model.bic
