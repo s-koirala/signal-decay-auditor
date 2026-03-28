@@ -1,0 +1,42 @@
+# Signal Decay Auditor — Python Dependencies
+# Python 3.9+
+
+# Core scientific stack
+numpy>=1.21,<2.0
+pandas>=1.4,<3.0
+scipy>=1.8,<2.0
+
+# Changepoint detection
+ruptures>=1.1.9
+
+# Econometrics and regime switching
+statsmodels>=0.14
+arch>=6.0
+linearmodels>=5.0
+
+# Hidden Markov Models
+hmmlearn>=0.3
+
+# Factor data access
+pandas-datareader>=0.10
+yfinance>=0.2
+fredapi>=0.5
+
+# Signal evaluation
+alphalens-reloaded>=0.4
+quantstats>=0.0.62
+
+# Bayesian changepoint (optional — install from source)
+# pip install git+https://github.com/hildensia/bayesian_changepoint_detection.git
+
+# Visualization
+matplotlib>=3.5
+seaborn>=0.12
+
+# Testing
+pytest>=7.0
+pytest-cov>=4.0
+
+# Utilities
+tqdm>=4.64
+pyyaml>=6.0
