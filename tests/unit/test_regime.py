@@ -96,6 +96,27 @@ class TestMarkovRegimeDetector:
         with pytest.raises(ValueError, match="NaN"):
             detector.fit(series)
 
+    def test_transition_matrix_rows_sum_to_one(self):
+        """Fitted transition matrix rows should each sum to ~1.0."""
+        series, meta = generate_regime_switching(
+            n=1000,
+            n_regimes=2,
+            regime_means=[0.05, -0.05],
+            regime_stds=[0.01, 0.01],
+            transition_matrix=[[0.98, 0.02], [0.02, 0.98]],
+            seed=42,
+        )
+        detector = MarkovRegimeDetector(n_regimes=2)
+        detector.fit(series)
+        trans = detector.get_transition_matrix()
+        # Squeeze in case statsmodels returns (k, k, 1)
+        trans = np.asarray(trans).squeeze()
+        for i in range(trans.shape[0]):
+            row_sum = float(np.sum(trans[i, :]))
+            assert abs(row_sum - 1.0) < 1e-4, (
+                f"Row {i} of transition matrix sums to {row_sum:.6f}, expected ~1.0"
+            )
+
 
 # ---------------------------------------------------------------------------
 # HMMRegimeDetector
@@ -173,6 +194,24 @@ class TestGARCHRegimeDetector:
             f"detected breakpoints: {breakpoints.tolist()}"
         )
 
+    def test_two_segment_contiguous_labels(self):
+        """Variance shift data should produce regime labels in {0, 1}."""
+        series, meta = generate_variance_shift(
+            n=1000,
+            break_points=[500],
+            stds=[0.01, 0.05],
+            mean=0.0,
+            seed=55,
+        )
+        detector = GARCHRegimeDetector(vol_model="GARCH", p=1, q=1)
+        detector.fit(series, penalty_value=3.0)
+        regimes = detector.get_volatility_regimes()
+
+        unique_labels = set(regimes)
+        assert unique_labels.issubset({0, 1}), (
+            f"Expected regime labels in {{0, 1}}, got {unique_labels}"
+        )
+
     def test_garch_conditional_volatility_shape(self):
         """Verify conditional volatility output length matches input."""
         series, meta = generate_variance_shift(
@@ -212,3 +251,19 @@ class TestLabelSignalState:
         assert labels[1] == "decayed"
         assert labels[2] == "neutral"
         assert labels[0] == "alpha_generating"
+
+    def test_single_regime_positive(self):
+        """Single regime with positive mean should be labeled alpha_generating."""
+        means = {0: 0.005}
+        labels = label_signal_state(means)
+        assert labels[0] == "alpha_generating", (
+            f"Expected 'alpha_generating' for positive mean, got '{labels[0]}'"
+        )
+
+    def test_single_regime_negative(self):
+        """Single regime with negative mean should be labeled decayed."""
+        means = {0: -0.003}
+        labels = label_signal_state(means)
+        assert labels[0] == "decayed", (
+            f"Expected 'decayed' for negative mean, got '{labels[0]}'"
+        )

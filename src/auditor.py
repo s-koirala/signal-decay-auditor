@@ -76,6 +76,10 @@ class AuditReport:
     metrics : dict
         Mapping from metric name to its computed value (scalar) or
         Series (for rolling metrics).
+    returns : np.ndarray or None
+        The raw return series used in the audit.  Stored so that
+        ``_verdict()`` can compute empirical post-break statistics
+        as a fallback when regime models are unavailable.
     decay_detected : bool
         True if the audit pipeline detected evidence of signal decay.
     decay_onset : int or None
@@ -91,6 +95,7 @@ class AuditReport:
     changepoint_results: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     regime_results: Optional[Dict[str, Any]] = None
     metrics: Dict[str, Any] = field(default_factory=dict)
+    returns: Optional[np.ndarray] = None
     decay_detected: bool = False
     decay_onset: Optional[int] = None
     summary: str = ""
@@ -180,6 +185,12 @@ def _verdict(report: AuditReport) -> str:
                 if regime_means:
                     min_mean = min(regime_means.values()) if isinstance(regime_means, dict) else np.nan
                     post_break_negative = min_mean <= 0.0
+            else:
+                # Fallback: compute empirical post-break mean directly from
+                # the return series when regime model is unavailable.
+                if report.returns is not None and median_break < len(report.returns):
+                    post_break_mean = float(np.mean(report.returns[median_break:]))
+                    post_break_negative = post_break_mean <= 0.0
 
     # Classification
     if n_detectors_with_breaks >= 2 and post_break_negative:
@@ -194,7 +205,15 @@ def _verdict(report: AuditReport) -> str:
         )
 
     if n_detectors_with_breaks >= 1 and not np.isnan(sharpe_start) and not np.isnan(sharpe_end):
-        if sharpe_end < sharpe_start - 0.3:
+        # Configurable heuristic: classify as DECAYING if the Sharpe decline
+        # exceeds a threshold.  We use the *smaller* of an absolute decline
+        # (0.3 Sharpe units) and a relative decline (30% of the initial
+        # Sharpe).  The relative component prevents false negatives when the
+        # starting Sharpe is low and false positives when it is very high.
+        absolute_threshold = 0.3
+        relative_threshold = abs(sharpe_start) * 0.3
+        sharpe_decline_threshold = min(absolute_threshold, relative_threshold)
+        if sharpe_end < sharpe_start - sharpe_decline_threshold:
             # Meaningful Sharpe decline
             det_names = [
                 name for name, res in report.changepoint_results.items()
@@ -535,6 +554,7 @@ class SignalDecayAuditor:
             changepoint_results=changepoint_results,
             regime_results=regime_results,
             metrics=computed_metrics,
+            returns=returns_arr,
             decay_detected=decay_detected,
             decay_onset=decay_onset,
             summary="",
@@ -733,7 +753,12 @@ class SignalDecayAuditor:
         # Each detector has slightly different constructor signatures;
         # pass min_size / min_segment_size where supported.
         if name == "pelt":
-            return cls(min_size=self.min_segment_size)
+            # Use "l2" cost (least-squares mean-shift model) rather than
+            # "rbf" (kernel).  The l2 cost is the natural parametric choice
+            # for detecting changes in mean of Gaussian data and correctly
+            # controls false positives under the null.  The rbf kernel cost
+            # can oversplit when the signal-to-noise ratio is low.
+            return cls(model="l2", min_size=self.min_segment_size)
         elif name == "cusum":
             # CUSUMDetector takes alpha only; no min_size parameter.
             return cls()

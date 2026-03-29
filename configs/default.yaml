@@ -1,0 +1,304 @@
+# Signal Decay Auditor — Default Configuration
+# All parameter values are empirically justified. See docs/decisions/ for rationale.
+# ---------------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Auditor pipeline (src/auditor.py :: SignalDecayAuditor)
+# ---------------------------------------------------------------------------
+auditor:
+  # Changepoint detectors to run in sequence on both raw returns and
+  # rolling Sharpe series.  These three cover complementary detection
+  # paradigms: penalised likelihood (PELT), recursive residual (CUSUM),
+  # and sequential F-test (Bai-Perron).
+  detectors:
+    - pelt
+    - cusum
+    - bai_perron
+
+  # Regime model for classifying factor return dynamics.
+  # "markov" = Hamilton (1989) Markov-switching regression.
+  # Set to null to skip regime detection.
+  regime_model: markov
+
+  # Evaluation metrics computed during the audit.
+  metrics:
+    - rolling_sharpe
+    - half_life
+    - oos_r_squared
+
+  # Window size for rolling metric computations.
+  # 252 trading days ~ 1 calendar year — the standard annual evaluation
+  # horizon for risk-adjusted performance (Sharpe, 1994).
+  rolling_window: 252
+
+  # Minimum observations per segment for changepoint detectors.
+  # 30 observations ensures stable within-segment mean/variance estimation,
+  # consistent with empirical finance practice (monthly returns ~ 2.5 years).
+  min_segment_size: 30
+
+
+# ---------------------------------------------------------------------------
+# PELT detector (src/detectors/changepoint.py :: PELTDetector)
+# Killick, Fearnhead & Eckley (2012), JASA 107(500), 1590-1598.
+# ---------------------------------------------------------------------------
+pelt:
+  # Cost function for segment homogeneity.
+  # "rbf" = Gaussian kernel change-in-distribution (non-parametric default,
+  # robust to non-Gaussian returns; Killick et al., 2012, Section 5).
+  # Alternatives: "l2" (least-squares mean-shift), "normal" (MLE).
+  # NOTE: auditor._make_detector overrides this to "l2" for mean-shift
+  # detection on returns; "rbf" is the PELTDetector class default.
+  model: rbf
+
+  # Minimum segment length in observations.
+  # 30 ensures enough data for reliable mean/variance estimation per segment.
+  min_size: 30
+
+  # Penalty value for PELT penalised likelihood.
+  # null = auto-computed via variance-scaled BIC:
+  #   pen = n_params * sigma^2 * log(n)
+  # where n_params = 2 (mean + variance for l2/rbf/normal costs),
+  # sigma^2 is estimated from the full series, and n is series length.
+  # Variance scaling is essential for financial return data where absolute
+  # cost improvements per observation are tiny relative to unscaled BIC.
+  # (Killick et al., 2012, Section 3.1; Schwarz, 1978; Yao, 1988).
+  penalty: null
+
+  # Bootstrap confidence intervals for breakpoint locations.
+  bootstrap:
+    n_bootstrap: 1000          # Number of stationary bootstrap replicates (Politis & Romano, 1994)
+    alpha: 0.05                # Significance level for percentile CIs
+    avg_block_length: 12       # Average block length for stationary bootstrap
+
+
+# ---------------------------------------------------------------------------
+# CUSUM detector (src/detectors/changepoint.py :: CUSUMDetector)
+# Page (1954); Brown, Durbin & Evans (1975), JRSS B 37(2), 149-192.
+# ---------------------------------------------------------------------------
+cusum:
+  # Significance level for the Brownian bridge boundary crossing test.
+  # Standard value from Brown, Durbin & Evans (1975), Table 1.
+  alpha: 0.05
+
+
+# ---------------------------------------------------------------------------
+# Bai-Perron detector (src/detectors/changepoint.py :: BaiPerronDetector)
+# Bai & Perron (1998), Econometrica 66(1), 47-78.
+# Bai & Perron (2003), J. Applied Econometrics 18(1), 1-22.
+# Andrews (1993), Econometrica 61(4), 821-856.
+# ---------------------------------------------------------------------------
+bai_perron:
+  # Maximum number of structural breaks to search for via the sequential
+  # sup-F procedure.
+  max_breaks: 5
+
+  # Fraction of the sample trimmed from each endpoint.
+  # epsilon = 0.15 is the canonical recommendation from Bai & Perron (1998)
+  # for the asymptotic theory.  Andrews (1993) derives critical values
+  # assuming 15% trimming.
+  trimming: 0.15
+
+  # Significance level for each sequential sup-F test, compared against
+  # tabulated critical values from Bai & Perron (2003), Table 1 (p=1,
+  # epsilon=0.15).
+  significance: 0.05
+
+
+# ---------------------------------------------------------------------------
+# MOSUM detector (src/detectors/changepoint.py :: MOSUMDetector)
+# Chu, Hornik & Kauan (1995), Biometrika 82(3), 603-617.
+# ---------------------------------------------------------------------------
+mosum:
+  # Moving-window bandwidth as a fraction of sample length.
+  # h = 0.10 is recommended by Chu, Hornik & Kauan (1995), Section 4,
+  # as a compromise between detection power and localisation accuracy.
+  bandwidth: 0.1
+
+  # Critical boundary shape for the normalised MOSUM path.
+  # "linear" = Brownian bridge boundary: c_alpha * (1 + 2*min(t, 1-t)),
+  # higher power near the centre, conservative at endpoints.
+  # "constant" = flat boundary c_alpha (equal sensitivity across sample).
+  boundary: linear
+
+  # Significance level for boundary crossing test.
+  alpha: 0.05
+
+
+# ---------------------------------------------------------------------------
+# Markov regime-switching model (src/detectors/regime.py :: MarkovRegimeDetector)
+# Hamilton (1989), Econometrica 57(2), 357-384.
+# ---------------------------------------------------------------------------
+markov:
+  # Number of regimes (hidden states).
+  # 2 is the canonical specification from Hamilton (1989) — sufficient for
+  # most factor decay applications (alpha-generating vs. decayed states).
+  # Higher counts risk overfitting on short samples.
+  n_regimes: 2
+
+  # Whether regime-specific variances are estimated.
+  # Enabled because factor return volatility typically differs across
+  # regimes (e.g., crisis vs. calm periods).
+  switching_variance: true
+
+  # Number of random EM initializations.  The fit with the highest
+  # log-likelihood is retained to mitigate sensitivity to local optima.
+  # 10 provides a good trade-off between robustness and computation time
+  # for typical factor return series (250-5000 observations).
+  n_init: 10
+
+  # Maximum regimes to evaluate when using BIC-based model selection
+  # (select_n_regimes).  Capped at 4 because financial regime-switching
+  # models rarely benefit from more than 3-4 states.
+  max_regimes_bic: 4
+
+
+# ---------------------------------------------------------------------------
+# HMM regime detector (src/detectors/regime.py :: HMMRegimeDetector)
+# Hamilton (1989); Rabiner (1989), Proc. IEEE 77(2), 257-286.
+# ---------------------------------------------------------------------------
+hmm:
+  # Number of hidden states.
+  # 2 is the minimal specification for regime detection and is standard
+  # in the Hamilton (1989) framework.
+  n_regimes: 2
+
+  # Covariance matrix type for emission distributions.
+  # "full" allows correlation between features in the multivariate case.
+  # Alternatives: "diag" (diagonal, independent features), "spherical".
+  covariance_type: full
+
+  # Maximum number of EM (Baum-Welch) iterations.
+  # 100 is typically sufficient for convergence on financial time series
+  # of moderate length.
+  n_iter: 100
+
+  # Number of random initializations.  Best fit (highest log-likelihood)
+  # is retained.
+  n_init: 10
+
+  # Random state seed offset formula: seed = i * 42 + 7 for i-th init.
+  # Ensures reproducibility without mutating global random state.
+
+  # Maximum regimes for BIC-based model selection (select_n_regimes).
+  # Default 5 is generous; most factor series are well-described by 2-3.
+  max_regimes_bic: 5
+
+
+# ---------------------------------------------------------------------------
+# GARCH regime detector (src/detectors/regime.py :: GARCHRegimeDetector)
+# Bollerslev (1986), J. Econometrics 31(3), 307-327.
+# Nelson (1991), Econometrica 59(2), 347-370.
+# Glosten, Jagannathan & Runkle (1993), J. Finance 48(5), 1779-1801.
+# ---------------------------------------------------------------------------
+garch:
+  # Volatility model specification.
+  # "GARCH" = standard GARCH(p,q) of Bollerslev (1986).
+  # Alternatives: "EGARCH" (Nelson, 1991), "GJR-GARCH" (GJR, 1993).
+  vol_model: GARCH
+
+  # Lag order for the volatility (GARCH) term.
+  # p=1 is standard and sufficient for most daily/monthly factor returns.
+  p: 1
+
+  # Lag order for the squared residual (ARCH) term.
+  # q=1 is the standard specification.
+  q: 1
+
+  # Error distribution assumption.
+  # "normal" (Gaussian), "t" (Student-t for fat tails), "skewt" (skewed-t).
+  dist: normal
+
+  # PELT penalty multiplier for changepoint detection on conditional
+  # volatility.  Actual penalty = penalty_value * log(n).
+  # 3.0 provides a BIC-like penalty that balances false positives and
+  # detection power for typical financial time series.
+  penalty_value: 3.0
+
+  # PELT cost model applied to the conditional volatility series.
+  # "rbf" (Gaussian kernel) is used in the implementation.
+  pelt_cost_model: rbf
+
+  # Minimum segment size for PELT on conditional volatility:
+  # max(2, n // 50), computed dynamically at fit time.
+
+
+# ---------------------------------------------------------------------------
+# Evaluation metrics (src/evaluation/metrics.py)
+# ---------------------------------------------------------------------------
+metrics:
+  # --- Rolling Sharpe ratio ---
+  # Sharpe (1994), J. Portfolio Management 21(1), 49-58.
+  # Lo (2002), Financial Analysts Journal 58(4), 36-52.
+  rolling_sharpe:
+    window: 252              # ~1 year of daily trading days (Sharpe, 1994)
+    annualization: 252       # sqrt-of-time scaling for daily data (Lo, 2002)
+
+  # --- Rolling out-of-sample R-squared ---
+  # Campbell & Thompson (2008), RFS 21(4), 1509-1531.
+  # Welch & Goyal (2008), RFS 21(4), 1455-1508.
+  rolling_oos_r_squared:
+    window: 60               # ~3 months of daily data (Welch & Goyal, 2008)
+    min_periods: 30          # Minimum non-NaN observations per window
+
+  # --- Signal half-life (Ornstein-Uhlenbeck) ---
+  # Uhlenbeck & Ornstein (1930).
+  # Rolling window for rolling_half_life.
+  rolling_half_life:
+    window: 252              # ~1 year of daily trading days
+
+  # --- Rolling information coefficient ---
+  # Grinold & Kahn (2000), Active Portfolio Management, 2nd ed.
+  rolling_ic:
+    window: 63               # ~1 calendar quarter of daily data (~63 trading days)
+
+  # --- Clark-West MSPE-adjusted test ---
+  # Clark & West (2007), J. Econometrics 138(1), 291-311.
+  clark_west:
+    significance: 0.05       # Default significance level
+
+  # --- Giacomini-White conditional predictive ability test ---
+  # Giacomini & White (2006), Econometrica 74(6), 1545-1578.
+  # No tunable parameters beyond test_type ("unconditional" / "conditional").
+
+  # --- Decay onset detection ---
+  # Page (1954), Biometrika 41(1/2), 100-115.
+  # Hinkley (1971), Biometrika 58(3), 509-523.
+  decay_onset:
+    method: cusum                # Detection method: "cusum" or "threshold"
+    threshold: null              # null = auto: 2 * std(metric_series) per Page (1954) / Hinkley (1971)
+    consecutive_periods: 5       # Required consecutive periods below threshold (for method="threshold")
+
+
+# ---------------------------------------------------------------------------
+# Verdict classification (src/auditor.py :: _verdict)
+# ---------------------------------------------------------------------------
+verdict:
+  # DECAYING classification uses the *smaller* of an absolute and a
+  # relative Sharpe decline threshold.  The relative component prevents
+  # false negatives when the starting Sharpe is low and false positives
+  # when it is very high.
+  absolute_sharpe_threshold: 0.3   # Absolute Sharpe units of decline
+  relative_sharpe_threshold: 0.3   # Fraction of initial Sharpe (30%)
+
+  # Minimum number of detectors that must agree on a structural break
+  # (with negative post-break mean) to classify the signal as DEAD.
+  min_detectors_for_dead: 2
+
+
+# ---------------------------------------------------------------------------
+# Bootstrap inference (shared defaults)
+# ---------------------------------------------------------------------------
+bootstrap:
+  n_bootstrap: 1000          # Replicates for confidence intervals
+  alpha: 0.05                # Significance level for percentile CIs
+  block_length: 12           # Average block length for stationary bootstrap (Politis & Romano, 1994)
+
+
+# ---------------------------------------------------------------------------
+# Reproducibility
+# ---------------------------------------------------------------------------
+seeds:
+  # Default random seed for reproducibility.
+  # Used as base in EM initialization formula: seed = i * 42 + 7
+  # where i is the initialization index (0, 1, ..., n_init-1).
+  default: 42

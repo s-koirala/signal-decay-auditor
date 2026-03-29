@@ -104,6 +104,16 @@ class TestPELTDetector:
                 f"No detected breakpoint near true {true_bp}; got {bps}"
             )
 
+    def test_pelt_constant_series(self):
+        """Constant series (np.ones(500)) should detect 0 breakpoints with model='l2'."""
+        series = np.ones(500)
+        det = PELTDetector(model="l2", min_size=30)
+        det.fit(series)
+        bps = det.get_breakpoints()
+        assert len(bps) == 0, (
+            f"Expected no breakpoints on constant series, got {bps}"
+        )
+
     def test_pelt_min_size_validation(self):
         short_series = np.random.default_rng(0).normal(size=30)
         det = PELTDetector(model="rbf", min_size=30)
@@ -137,6 +147,16 @@ class TestCUSUMDetector:
 
         assert p_value > 0.05, (
             f"CUSUM should not reject null on no-break series (p={p_value:.4f})"
+        )
+
+    def test_cusum_constant_series(self):
+        """Constant series should not reject the null hypothesis."""
+        series = np.ones(500)
+        det = CUSUMDetector(alpha=0.05)
+        det.fit(series)
+        _, p_value = det.get_statistic()
+        assert p_value >= 0.05, (
+            f"CUSUM should not reject null on constant series (p={p_value:.4f})"
         )
 
     def test_cusum_break_location_reasonable(self):
@@ -300,3 +320,21 @@ class TestInputValidation:
             det = DetectorClass()
             with pytest.raises(ValueError, match="NaN"):
                 det.fit(series)
+
+    def test_short_series_pelt(self):
+        """Series shorter than 2*min_size should raise ValueError."""
+        # min_size defaults to 30, so 2*30=60 is the minimum length.
+        # A series of length 59 should be rejected.
+        rng = np.random.default_rng(101)
+        short_series = rng.normal(size=59)
+        det = PELTDetector(model="l2", min_size=30)
+        with pytest.raises(ValueError, match="less than the required minimum"):
+            det.fit(short_series)
+
+    def test_short_series_cusum(self):
+        """Series shorter than min_length=6 for CUSUM should raise ValueError."""
+        rng = np.random.default_rng(102)
+        short_series = rng.normal(size=5)
+        det = CUSUMDetector(alpha=0.05)
+        with pytest.raises(ValueError, match="less than the required minimum"):
+            det.fit(short_series)

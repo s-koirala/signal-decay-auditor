@@ -31,6 +31,67 @@ cd signal-decay-auditor
 pip install -r requirements.txt
 ```
 
+## Usage
+
+### CLI
+
+```bash
+# Audit a single Fama-French factor
+python -m src audit --factor HML
+
+# Audit all FF3 factors
+python -m src audit --all
+
+# Audit custom CSV data
+python -m src audit --csv data/raw/my_returns.csv --col signal_returns
+
+# With options
+python -m src audit --factor HML --start 2000-01-01 --end 2023-12-31 --verbose
+```
+
+### Python API
+
+```python
+from src.auditor import SignalDecayAuditor
+from src.factors.data_loader import FactorDataLoader
+
+# Load data
+loader = FactorDataLoader()
+ff3 = loader.load_fama_french(start="2000-01-01")
+
+# Run audit
+auditor = SignalDecayAuditor()
+report = auditor.audit(ff3["HML"], name="HML (Value)")
+
+print(report.summary)
+# => "DEAD: Multiple detectors agree on break near index 4521. ..."
+
+# Generate markdown report
+auditor.generate_report(report, output_path="artifacts/reports/hml-audit-report.md")
+```
+
+### Verdict Classification
+
+| Verdict | Criteria |
+| ------- | -------- |
+| **DEAD** | Multiple detectors agree on structural break + negative post-break returns |
+| **DECAYING** | Break detected + sustained rolling Sharpe decline, or CUSUM decay onset |
+| **ACTIVE** | No structural breaks detected, rolling Sharpe stable |
+
+## Configuration
+
+Default parameters are in `configs/default.yaml`. All values are empirically justified with citations to the originating literature. See `docs/decisions/` for parameter selection rationale.
+
+## Testing
+
+```bash
+# Unit + synthetic integration tests (no network required)
+pytest tests/ -k "not slow"
+
+# Full suite including Fama-French live data
+pytest tests/ -v
+```
+
 ## Project Status
 
-Phase 0: Environment setup and literature review.
+Phase 1: Core pipeline operational. Changepoint detectors (PELT, CUSUM, Bai-Perron, MOSUM), regime models (Markov, HMM, GARCH), and evaluation metrics (rolling Sharpe, half-life, OOS R-squared, Giacomini-White, Clark-West) implemented and tested against synthetic ground truth and live Fama-French factor data.

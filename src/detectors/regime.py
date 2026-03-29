@@ -164,6 +164,7 @@ class MarkovRegimeDetector:
 
         best_model = None
         best_llf = -np.inf
+        n_success = 0
 
         for i in range(n_init):
             try:
@@ -181,6 +182,7 @@ class MarkovRegimeDetector:
                     start_params += rng.normal(scale=0.1, size=start_params.shape)
                     fitted = model.fit(disp=False, start_params=start_params)
 
+                n_success += 1
                 if fitted.llf > best_llf:
                     best_llf = fitted.llf
                     best_model = fitted
@@ -196,6 +198,13 @@ class MarkovRegimeDetector:
             raise RuntimeError(
                 "All Markov regression initializations failed. Check that the "
                 "series has sufficient length and variance for regime detection."
+            )
+
+        if n_success < n_init // 2:
+            logger.warning(
+                "Only %d/%d Markov regression initializations succeeded. "
+                "Model specification may be inappropriate for this data.",
+                n_success, n_init,
             )
 
         self._fitted_model = best_model
@@ -219,8 +228,16 @@ class MarkovRegimeDetector:
             sigma2 = best_model.params.get("sigma2", best_model.params.iloc[self.n_regimes])
             self._regime_variances = np.full(self.n_regimes, sigma2)
 
-        # Extract transition matrix from the fitted model
-        self._transition_matrix = best_model.regime_transition
+        # Extract transition matrix from the fitted model.
+        # statsmodels MarkovRegression.regime_transition is column-
+        # stochastic: P[i,j] = P(S_t = i | S_{t-1} = j).  Transpose
+        # to the row-stochastic Hamilton (1989) convention:
+        # P[i,j] = P(S_t = j | S_{t-1} = i), where rows sum to 1.
+        raw_trans = best_model.regime_transition
+        if isinstance(raw_trans, pd.DataFrame):
+            raw_trans = raw_trans.values
+        raw_trans = np.asarray(raw_trans).squeeze()
+        self._transition_matrix = raw_trans.T
 
         logger.info(
             "MarkovRegimeDetector fitted with %d regimes. Log-likelihood: %.4f",
@@ -300,16 +317,15 @@ class MarkovRegimeDetector:
     def get_transition_matrix(self) -> np.ndarray:
         """Return the estimated transition probability matrix.
 
+        Row-stochastic (Hamilton, 1989 convention): rows sum to 1.
+
         Returns
         -------
         np.ndarray
             Shape (n_regimes, n_regimes). Entry (i, j) is P(S_t = j | S_{t-1} = i).
         """
         self._check_fitted()
-        trans = self._transition_matrix
-        if isinstance(trans, pd.DataFrame):
-            return trans.values
-        return np.asarray(trans)
+        return np.asarray(self._transition_matrix)
 
     def select_n_regimes(
         self,
@@ -465,6 +481,7 @@ class HMMRegimeDetector:
         self._X = arr
         best_model = None
         best_score = -np.inf
+        n_success = 0
 
         for i in range(n_init):
             try:
@@ -478,6 +495,7 @@ class HMMRegimeDetector:
                     warnings.simplefilter("ignore")
                     model.fit(arr)
 
+                n_success += 1
                 score = model.score(arr)
                 if score > best_score:
                     best_score = score
@@ -492,6 +510,13 @@ class HMMRegimeDetector:
         if best_model is None:
             raise RuntimeError(
                 "All HMM initializations failed. Check series length and variance."
+            )
+
+        if n_success < n_init // 2:
+            logger.warning(
+                "Only %d/%d HMM initializations succeeded. "
+                "Model specification may be inappropriate for this data.",
+                n_success, n_init,
             )
 
         self._fitted_model = best_model
@@ -846,9 +871,9 @@ class GARCHRegimeDetector:
         rank_map = np.zeros(n_segments, dtype=int)
 
         if n_segments == 2:
-            # Two segments: low (0) and high (1)
+            # Two segments: low (0) and high (1).  Use contiguous labels.
             rank_map[sorted_indices[0]] = 0  # low
-            rank_map[sorted_indices[1]] = 2  # high
+            rank_map[sorted_indices[1]] = 1  # high
         else:
             # Divide into terciles: low=0, medium=1, high=2
             tercile_size = n_segments / 3.0
@@ -946,7 +971,10 @@ def label_signal_state(
     if not regime_means:
         raise ValueError("regime_means must be a non-empty dict.")
 
-    # Sort regimes by mean return
+    # Sort regimes by mean return.
+    # Note: Python's sorted() is stable, so regimes with equal means
+    # retain their original dict insertion order.  This makes labeling
+    # deterministic but dependent on the ordering of regime_means keys.
     sorted_regimes = sorted(regime_means.items(), key=lambda x: x[1])
     n = len(sorted_regimes)
 

@@ -108,8 +108,12 @@ def oos_r_squared(
         bench_arr[0] = np.nan  # No history available at time 0.
         bench_arr[1:] = expanding_mean[:-1]
 
-    sse_model = np.nansum((actual_arr - model_arr) ** 2)
-    sse_bench = np.nansum((actual_arr - bench_arr) ** 2)
+    # Exclude positions where the benchmark is NaN (e.g., t=0 for the
+    # default expanding-mean benchmark) so that model and benchmark SSE
+    # are computed over the same observation set.
+    valid_mask = ~np.isnan(bench_arr) & ~np.isnan(model_arr) & ~np.isnan(actual_arr)
+    sse_model = float(np.sum((actual_arr[valid_mask] - model_arr[valid_mask]) ** 2))
+    sse_bench = float(np.sum((actual_arr[valid_mask] - bench_arr[valid_mask]) ** 2))
 
     if sse_bench == 0.0:
         logger.warning(
@@ -210,6 +214,7 @@ def clark_west_test(
     actual: Union[np.ndarray, pd.Series],
     forecast_restricted: Union[np.ndarray, pd.Series],
     forecast_unrestricted: Union[np.ndarray, pd.Series],
+    significance: float = 0.05,
 ) -> Dict[str, object]:
     """MSPE-adjusted test for nested model comparison.
 
@@ -236,13 +241,15 @@ def clark_west_test(
             model, length T.
         forecast_unrestricted: Forecasts from the unrestricted (larger)
             model, length T.
+        significance: Significance level for the rejection decision.
+            Default 0.05 (5 %).
 
     Returns:
         dict with keys:
             - ``"statistic"``: float, the Clark-West t-statistic.
             - ``"p_value"``: float, one-sided p-value (H_a: unrestricted
               model has lower MSPE after adjustment).
-            - ``"reject"``: bool, True if p_value < 0.05.
+            - ``"reject"``: bool, True if p_value < ``significance``.
 
     References:
         Clark, T. E. & West, K. D. (2007). Approximately normal tests
@@ -268,12 +275,30 @@ def clark_west_test(
         logger.warning("Fewer than 2 valid observations for Clark-West test.")
         return {"statistic": np.nan, "p_value": np.nan, "reject": False}
 
-    # t-statistic for mean(f_t) = 0
+    # t-statistic for mean(f_t) = 0 using HAC (Newey-West) standard
+    # errors.  Clark & West (2007) require HAC inference because the
+    # MSPE-adjusted series f_t inherits serial correlation from
+    # overlapping forecast errors.
     mean_f = np.mean(f_valid)
-    se_f = np.std(f_valid, ddof=1) / np.sqrt(n)
+
+    # Newey-West (1994) automatic bandwidth: floor(4*(n/100)^(2/9))
+    # for the Bartlett kernel.
+    bandwidth = int(np.floor(4.0 * (n / 100.0) ** (2.0 / 9.0)))
+    bandwidth = max(bandwidth, 0)
+
+    # HAC variance of the sample mean using Bartlett kernel weights.
+    f_demean = f_valid - mean_f
+    gamma_0 = float(np.mean(f_demean ** 2))
+    hac_var = gamma_0
+    for j in range(1, bandwidth + 1):
+        w = 1.0 - j / (bandwidth + 1.0)
+        gamma_j = float(np.mean(f_demean[j:] * f_demean[:-j]))
+        hac_var += 2.0 * w * gamma_j
+
+    se_f = np.sqrt(max(hac_var, 0.0) / n)
 
     if se_f == 0.0:
-        logger.warning("Zero standard error in Clark-West f_t series.")
+        logger.warning("Zero HAC standard error in Clark-West f_t series.")
         return {"statistic": np.nan, "p_value": np.nan, "reject": False}
 
     t_stat = mean_f / se_f
@@ -282,12 +307,10 @@ def clark_west_test(
     # (positive mean f_t), so p_value = P(T > t_stat) under t(n-1).
     p_value = float(1.0 - stats.t.cdf(t_stat, df=n - 1))
 
-    significance_level = 0.05
-
     return {
         "statistic": float(t_stat),
         "p_value": p_value,
-        "reject": bool(p_value < significance_level),
+        "reject": bool(p_value < significance),
     }
 
 
@@ -362,12 +385,28 @@ def giacomini_white_test(
     n = len(d_valid)
 
     if test_type == "unconditional":
-        # Diebold-Mariano style: t-test on mean loss differential.
+        # Diebold-Mariano style t-test on the mean loss differential
+        # with HAC (Newey-West) standard errors.  Giacomini & White
+        # (2006) require HAC inference because loss differentials from
+        # multi-step or overlapping forecasts are serially correlated.
         if n < 2:
             return {"statistic": np.nan, "p_value": np.nan, "df": 1}
 
         mean_d = np.mean(d_valid)
-        se_d = np.std(d_valid, ddof=1) / np.sqrt(n)
+
+        # Newey-West (1994) automatic bandwidth: floor(4*(n/100)^(2/9))
+        bandwidth = int(np.floor(4.0 * (n / 100.0) ** (2.0 / 9.0)))
+        bandwidth = max(bandwidth, 0)
+
+        d_demean = d_valid - mean_d
+        gamma_0 = float(np.mean(d_demean ** 2))
+        hac_var = gamma_0
+        for j in range(1, bandwidth + 1):
+            w = 1.0 - j / (bandwidth + 1.0)
+            gamma_j = float(np.mean(d_demean[j:] * d_demean[:-j]))
+            hac_var += 2.0 * w * gamma_j
+
+        se_d = np.sqrt(max(hac_var, 0.0) / n)
 
         if se_d == 0.0:
             return {"statistic": np.nan, "p_value": np.nan, "df": 1}
@@ -412,8 +451,10 @@ def giacomini_white_test(
         residuals = d_valid - X @ beta
 
         # --- HAC (Newey-West) variance estimation ---
-        # Bandwidth: floor(n^(1/3)), standard for Newey-West.
-        bandwidth = int(np.floor(n ** (1.0 / 3.0)))
+        # Newey-West (1994) automatic bandwidth for Bartlett kernel:
+        # floor(4*(n/100)^(2/9)).
+        bandwidth = int(np.floor(4.0 * (n / 100.0) ** (2.0 / 9.0)))
+        bandwidth = max(bandwidth, 0)
 
         # Compute the HAC long-run variance S_HAC of X'u using
         # Bartlett kernel weights: w(j) = 1 - |j|/(bandwidth+1).
@@ -470,9 +511,10 @@ def signal_half_life(
 ) -> Dict[str, object]:
     """Estimate the half-life of mean reversion from an Ornstein-Uhlenbeck process.
 
-    Models the return series as a discrete-time AR(1) process:
+    Models the return series as a discrete-time AR(1) process with
+    intercept:
 
-        r_t = phi * r_{t-1} + epsilon_t
+        r_t = alpha + phi * r_{t-1} + epsilon_t
 
     Under the continuous-time Ornstein-Uhlenbeck interpretation:
         - phi is the AR(1) slope coefficient.
@@ -822,6 +864,7 @@ def detect_decay_onset(
     metric_series: Union[np.ndarray, pd.Series],
     method: str = "cusum",
     threshold: Optional[float] = None,
+    consecutive_periods: int = 5,
 ) -> Dict[str, object]:
     """Detect when signal quality decay begins in a rolling metric series.
 
@@ -840,13 +883,17 @@ def detect_decay_onset(
               deviations of the metric series if ``threshold`` is
               None). Based on Page (1954).
             - ``"threshold"``: Flag when the metric drops below
-              ``threshold`` for 5 or more consecutive periods.
+              ``threshold`` for ``consecutive_periods`` or more
+              consecutive periods.
         threshold: Sensitivity parameter.
             - For ``method="cusum"``: CUSUM critical value. If None,
               defaults to 2 * std(metric_series) — a standard choice
               per Page (1954) and Hinkley (1971).
             - For ``method="threshold"``: The minimum acceptable metric
               value. Required when ``method="threshold"``.
+        consecutive_periods: Number of consecutive periods below
+            ``threshold`` required to flag decay onset when
+            ``method="threshold"``. Default 5.
 
     Returns:
         dict with keys:
@@ -912,17 +959,26 @@ def detect_decay_onset(
         # Critical value: 2 * sigma per Page (1954) / Hinkley (1971)
         critical = threshold if threshold is not None else 2.0 * sigma
 
-        # Compute expanding mean at each t (using only data up to t)
-        # to eliminate look-ahead bias.
+        # Compute expanding mean at each t using only data up to t-1
+        # (excluding the current observation) to eliminate look-ahead
+        # bias within each step.  At t=0 no prior data exists, so the
+        # first observation cannot produce a deviation.
         nan_mask = np.isnan(valid_values)
         cumsum_vals = np.where(nan_mask, 0.0, valid_values)
         cumsum_vals = np.cumsum(cumsum_vals)
         cumcount = np.cumsum(~nan_mask).astype(np.float64)
-        # Avoid division by zero at positions with no valid data yet
-        expanding_mu = np.where(cumcount > 0, cumsum_vals / cumcount, 0.0)
 
-        # Cumulative sum of deviations (positive = values below expanding mean)
+        # Shifted expanding mean: mu(t) = mean(x[0:t]), not mean(x[0:t+1]).
+        # expanding_mu[t] uses cumsum_vals[t-1] / cumcount[t-1].
+        expanding_mu = np.zeros_like(valid_values)
+        expanding_mu[0] = 0.0  # no prior data at t=0
+        mask_prev = cumcount[:-1] > 0
+        expanding_mu[1:] = np.where(mask_prev, cumsum_vals[:-1] / cumcount[:-1], 0.0)
+
+        # Cumulative sum of deviations (positive = values below expanding mean).
+        # Skip t=0 since there is no prior mean to deviate from.
         deviations = np.where(nan_mask, 0.0, expanding_mu - valid_values)
+        deviations[0] = 0.0  # no deviation at first observation
         cusum = np.cumsum(deviations)
 
         # Find first time CUSUM exceeds the critical value
@@ -953,8 +1009,8 @@ def detect_decay_onset(
                 "threshold must be specified when method='threshold'."
             )
 
-        # Consecutive periods below threshold: require 5 in a row
-        consecutive_required = 5
+        # Consecutive periods below threshold
+        consecutive_required = consecutive_periods
         below = valid_values < threshold
         count = 0
 

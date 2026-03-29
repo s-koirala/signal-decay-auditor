@@ -31,13 +31,10 @@ class FactorDataLoader:
 
     All date parameters accept anything parseable by ``pd.Timestamp``.
     Returned DataFrames always have a ``DatetimeIndex`` named ``"date"``.
-
-    Attributes:
-        cache: Dict of previously loaded DataFrames keyed by source label.
     """
 
     def __init__(self) -> None:
-        self.cache: Dict[str, pd.DataFrame] = {}
+        pass
 
     # ------------------------------------------------------------------
     # Fama-French factor loaders
@@ -76,7 +73,14 @@ class FactorDataLoader:
         # Convert percentage points to decimals.
         df = df / 100.0
 
-        df.index = pd.to_datetime(df.index.astype(str))
+        # pandas_datareader returns a PeriodIndex.  For monthly datasets
+        # (e.g., "F-F_Research_Data_Factors"), convert to end-of-period
+        # Timestamps to preserve the correct date semantics.  For daily
+        # datasets the PeriodIndex is already day-resolution.
+        if hasattr(df.index, 'to_timestamp'):
+            df.index = df.index.to_timestamp(how='end')
+        else:
+            df.index = pd.to_datetime(df.index.astype(str))
         df.index.name = "date"
 
         self._log_checksum(df, label=dataset)
@@ -303,12 +307,6 @@ class FactorDataLoader:
             "factor": factor_values,
             "forward": forward_returns,
         }).dropna()
-
-        def _spearman_corr(sub: pd.DataFrame) -> float:
-            if len(sub) < 2:
-                return np.nan
-            corr, _ = stats.spearmanr(sub["factor"], sub["forward"])
-            return corr
 
         ic_values = []
         dates = aligned.index

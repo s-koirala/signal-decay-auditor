@@ -246,7 +246,7 @@ class PELTDetector(ChangePointDetector):
             pen = self.penalty
         else:
             n_params = self._MODEL_NPARAMS.get(self.model, 2)
-            sigma2 = np.var(arr)
+            sigma2 = np.var(arr, ddof=1)
             pen = n_params * sigma2 * np.log(n)
 
         algo = ruptures.Pelt(model=self.model, min_size=self.min_size).fit(
@@ -306,7 +306,7 @@ class PELTDetector(ChangePointDetector):
             pen = self.penalty
         else:
             n_params = self._MODEL_NPARAMS.get(self.model, 2)
-            sigma2 = np.var(arr)
+            sigma2 = np.var(arr, ddof=1)
             pen = n_params * sigma2 * np.log(n)
 
         n_breaks = len(self._breakpoints)
@@ -388,6 +388,7 @@ class CUSUMDetector(ChangePointDetector):
         self._cusum_path: Optional[np.ndarray] = None
         self._sup_stat: Optional[float] = None
         self._pvalue: Optional[float] = None
+        self._series_cache: Optional[np.ndarray] = None
 
     # -- internal helpers -------------------------------------------------
 
@@ -739,7 +740,11 @@ class BaiPerronDetector(ChangePointDetector):
         sup_f, break_idx = self._sup_f_statistic(
             y, start, end, trim_start, trim_end
         )
-        cv = self._get_critical_value(depth + 1)
+        # In the sequential procedure (Bai & Perron, 1998, Section 4),
+        # each step tests for exactly one additional break in a sub-
+        # segment, so the critical value is always for a single-break
+        # sup-F test regardless of recursion depth.
+        cv = self._get_critical_value(1)
 
         if sup_f < cv:
             return []
@@ -985,11 +990,14 @@ class MOSUMDetector(ChangePointDetector):
             cv = self._get_critical_value()
             return np.full(n_valid, cv)
         else:
-            # Linear (Brownian bridge) boundary: c_alpha * (1 + 2 * |t - 0.5|)
-            # where t ranges over [h/(2n), 1 - h/(2n)]
+            # Linear (Brownian bridge) boundary per Chu, Hornik & Kauan
+            # (1995): c_alpha * (1 + 2 * min(t, 1-t)).  This widens the
+            # boundary at endpoints (conservative) and narrows it at the
+            # sample centre (higher power), matching the variance profile
+            # of the MOSUM process.
             cv = self._get_critical_value()
             t = np.linspace(h / (2.0 * n), 1.0 - h / (2.0 * n), n_valid)
-            return cv * (1.0 + 2.0 * np.abs(t - 0.5))
+            return cv * (1.0 + 2.0 * np.minimum(t, 1.0 - t))
 
     # -- public interface -------------------------------------------------
 
