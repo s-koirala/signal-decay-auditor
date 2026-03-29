@@ -1,0 +1,364 @@
+{
+  "Mkt-RF (Market)": {
+    "name": "Mkt-RF (Market)",
+    "n_obs": 15751,
+    "start_date": "1963-07-01",
+    "end_date": "2026-01-30",
+    "ann_return": 0.07252659513681672,
+    "ann_vol": 0.16229108303975925,
+    "full_sample_sharpe": 0.4468920520978262,
+    "verdict": "DECAYING",
+    "full_verdict": "DECAYING: Decay onset detected at index 289 via CUSUM on rolling Sharpe.",
+    "decay_detected": true,
+    "decay_onset": 289,
+    "sharpe_early": 0.5192142077964075,
+    "sharpe_late": 0.8922058852257361,
+    "sharpe_delta": 0.3729916774293286,
+    "half_life": 0.16534289409867162,
+    "regime_means": {
+      "0": -0.0007412918960645435,
+      "1": 0.0006640755823975243
+    },
+    "regime_labels": {
+      "0": "decayed",
+      "1": "alpha_generating"
+    },
+    "transition_matrix": [
+      [
+        0.9649476238729566,
+        0.03505237612704337
+      ],
+      [
+        0.012775137644016978,
+        0.9872248623559831
+      ]
+    ],
+    "n_breaks_returns": {
+      "pelt": 2,
+      "cusum": 0,
+      "bai_perron": 0
+    },
+    "n_breaks_sharpe": {
+      "pelt": 75,
+      "cusum": 1,
+      "bai_perron": 3
+    },
+    "break_dates_returns": {
+      "pelt": [
+        "2008-09-09",
+        "2008-10-28"
+      ],
+      "cusum": [],
+      "bai_perron": []
+    },
+    "report_path": "artifacts/reports/mkt_rf-audit-report.md"
+  },
+  "SMB (Size)": {
+    "name": "SMB (Size)",
+    "n_obs": 15751,
+    "start_date": "1963-07-01",
+    "end_date": "2026-01-30",
+    "ann_return": 0.01531742746492286,
+    "ann_vol": 0.08752116689645395,
+    "full_sample_sharpe": 0.1750139767108552,
+    "verdict": "DEAD",
+    "full_verdict": "DEAD: Multiple detectors agree on break near index 9220. Post-break mean return is negative. Post-break rolling Sharpe: -0.23.",
+    "decay_detected": true,
+    "decay_onset": 1821,
+    "sharpe_early": 1.073773689725652,
+    "sharpe_late": -0.2312664442045372,
+    "sharpe_delta": -1.3050401339301891,
+    "half_life": 0.20095907189615128,
+    "regime_means": {
+      "0": 0.0001676258681526738,
+      "1": -0.00026926503202411256
+    },
+    "regime_labels": {
+      "1": "decayed",
+      "0": "alpha_generating"
+    },
+    "transition_matrix": [
+      [
+        0.9890652527122701,
+        0.010934747287729918
+      ],
+      [
+        0.03369563691367104,
+        0.9663043630863289
+      ]
+    ],
+    "n_breaks_returns": {
+      "pelt": 3,
+      "cusum": 1,
+      "bai_perron": 0
+    },
+    "n_breaks_sharpe": {
+      "pelt": 56,
+      "cusum": 1,
+      "bai_perron": 5
+    },
+    "break_dates_returns": {
+      "pelt": [
+        "2000-01-13",
+        "2000-03-13",
+        "2000-04-25"
+      ],
+      "cusum": [
+        "1987-10-19"
+      ],
+      "bai_perron": []
+    },
+    "report_path": "artifacts/reports/smb-audit-report.md"
+  },
+  "HML (Value)": {
+    "name": "HML (Value)",
+    "n_obs": 15751,
+    "start_date": "1963-07-01",
+    "end_date": "2026-01-30",
+    "ann_return": 0.036700069836835755,
+    "ann_vol": 0.0930293388061941,
+    "full_sample_sharpe": 0.3944999535393041,
+    "verdict": "DECAYING",
+    "full_verdict": "DECAYING: Pelt detected structural break at index 9090. Rolling Sharpe declined from 1.0 to -0.2.",
+    "decay_detected": true,
+    "decay_onset": 371,
+    "sharpe_early": 0.9881148303091468,
+    "sharpe_late": -0.2442788168451004,
+    "sharpe_delta": -1.2323936471542472,
+    "half_life": 0.28497036939513143,
+    "regime_means": {
+      "0": 0.00041469730405314844,
+      "1": 5.757077606404059e-05
+    },
+    "regime_labels": {
+      "1": "decayed",
+      "0": "alpha_generating"
+    },
+    "transition_matrix": [
+      [
+        0.968996921435683,
+        0.031003078564317055
+      ],
+      [
+        0.01018418286847213,
+        0.9898158171315279
+      ]
+    ],
+    "n_breaks_returns": {
+      "pelt": 8,
+      "cusum": 1,
+      "bai_perron": 0
+    },
+    "n_breaks_sharpe": {
+      "pelt": 69,
+      "cusum": 1,
+      "bai_perron": 5
+    },
+    "break_dates_returns": {
+      "pelt": [
+        "1999-08-09",
+        "2000-03-06",
+        "2001-03-30",
+        "2009-01-02",
+        "2009-03-10",
+        "2009-04-22",
+        "2020-01-06",
+        "2020-05-14"
+      ],
+      "cusum": [
+        "2020-11-06"
+      ],
+      "bai_perron": []
+    },
+    "report_path": "artifacts/reports/hml-audit-report.md"
+  },
+  "RMW (Profitability)": {
+    "name": "RMW (Profitability)",
+    "n_obs": 15751,
+    "start_date": "1963-07-01",
+    "end_date": "2026-01-30",
+    "ann_return": 0.03245553933083614,
+    "ann_vol": 0.0642831228747811,
+    "full_sample_sharpe": 0.5048842974548264,
+    "verdict": "DECAYING",
+    "full_verdict": "DECAYING: Decay onset detected at index 294 via CUSUM on rolling Sharpe.",
+    "decay_detected": true,
+    "decay_onset": 294,
+    "sharpe_early": -0.020267611278814084,
+    "sharpe_late": 0.3481818919028539,
+    "sharpe_delta": 0.368449503181668,
+    "half_life": 0.3324177411992777,
+    "regime_means": {
+      "0": 0.00023921097700219896,
+      "1": 8.789888653733077e-05
+    },
+    "regime_labels": {
+      "1": "decayed",
+      "0": "alpha_generating"
+    },
+    "transition_matrix": [
+      [
+        0.981747649729777,
+        0.018252350270222983
+      ],
+      [
+        0.006798733283214213,
+        0.9932012667167858
+      ]
+    ],
+    "n_breaks_returns": {
+      "pelt": 6,
+      "cusum": 1,
+      "bai_perron": 0
+    },
+    "n_breaks_sharpe": {
+      "pelt": 73,
+      "cusum": 1,
+      "bai_perron": 4
+    },
+    "break_dates_returns": {
+      "pelt": [
+        "1999-12-01",
+        "2000-03-06",
+        "2000-04-17",
+        "2000-06-21",
+        "2002-10-15",
+        "2002-11-26"
+      ],
+      "cusum": [
+        "2000-03-31"
+      ],
+      "bai_perron": []
+    },
+    "report_path": "artifacts/reports/rmw-audit-report.md"
+  },
+  "CMA (Investment)": {
+    "name": "CMA (Investment)",
+    "n_obs": 15751,
+    "start_date": "1963-07-01",
+    "end_date": "2026-01-30",
+    "ann_return": 0.02965091740206971,
+    "ann_vol": 0.060781977108808546,
+    "full_sample_sharpe": 0.4878241678284053,
+    "verdict": "DECAYING",
+    "full_verdict": "DECAYING: Pelt detected structural break at index 1620. Rolling Sharpe declined from 0.7 to -0.3.",
+    "decay_detected": true,
+    "decay_onset": 448,
+    "sharpe_early": 0.6985075489109944,
+    "sharpe_late": -0.2774977952527854,
+    "sharpe_delta": -0.9760053441637798,
+    "half_life": 0.3306233516716667,
+    "regime_means": {
+      "0": 1.860300622673433e-05,
+      "1": 0.00036462427176620207
+    },
+    "regime_labels": {
+      "0": "decayed",
+      "1": "alpha_generating"
+    },
+    "transition_matrix": [
+      [
+        0.9901260830828167,
+        0.009873916917183312
+      ],
+      [
+        0.024522785401187828,
+        0.9754772145988122
+      ]
+    ],
+    "n_breaks_returns": {
+      "pelt": 8,
+      "cusum": 1,
+      "bai_perron": 2
+    },
+    "n_breaks_sharpe": {
+      "pelt": 70,
+      "cusum": 1,
+      "bai_perron": 5
+    },
+    "break_dates_returns": {
+      "pelt": [
+        "1970-01-16",
+        "1970-05-26",
+        "2000-07-20",
+        "2001-01-03",
+        "2021-11-22",
+        "2022-06-14",
+        "2022-08-11",
+        "2023-01-04"
+      ],
+      "cusum": [
+        "2001-01-02"
+      ],
+      "bai_perron": [
+        "1997-10-10",
+        "2004-01-21"
+      ]
+    },
+    "report_path": "artifacts/reports/cma-audit-report.md"
+  },
+  "UMD (Momentum)": {
+    "name": "UMD (Momentum)",
+    "n_obs": 15751,
+    "start_date": "1963-07-01",
+    "end_date": "2026-01-30",
+    "ann_return": 0.07169624785727892,
+    "ann_vol": 0.12380896899184679,
+    "full_sample_sharpe": 0.5790876738663445,
+    "verdict": "DEAD",
+    "full_verdict": "DEAD: Multiple detectors agree on break near index 11335. Post-break mean return is negative. Post-break rolling Sharpe: 0.50.",
+    "decay_detected": true,
+    "decay_onset": 279,
+    "sharpe_early": 1.1858445529137385,
+    "sharpe_late": 0.495544620839613,
+    "sharpe_delta": -0.6902999320741254,
+    "half_life": 0.38411262073318425,
+    "regime_means": {
+      "0": 0.0006817215762728323,
+      "1": -0.0005961893544149469
+    },
+    "regime_labels": {
+      "1": "decayed",
+      "0": "alpha_generating"
+    },
+    "transition_matrix": [
+      [
+        0.9815509838083791,
+        0.01844901619162087
+      ],
+      [
+        0.040830300125659066,
+        0.959169699874341
+      ]
+    ],
+    "n_breaks_returns": {
+      "pelt": 12,
+      "cusum": 0,
+      "bai_perron": 1
+    },
+    "n_breaks_sharpe": {
+      "pelt": 78,
+      "cusum": 1,
+      "bai_perron": 5
+    },
+    "break_dates_returns": {
+      "pelt": [
+        "2000-01-13",
+        "2000-03-06",
+        "2000-04-17",
+        "2002-10-08",
+        "2002-11-26",
+        "2008-05-30",
+        "2008-07-14",
+        "2008-09-09",
+        "2008-11-25",
+        "2009-01-09"
+      ],
+      "cusum": [],
+      "bai_perron": [
+        "2008-11-21"
+      ]
+    },
+    "report_path": "artifacts/reports/umd-audit-report.md"
+  }
+}
