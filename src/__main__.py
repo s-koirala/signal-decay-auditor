@@ -95,6 +95,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Output directory for markdown reports (default: artifacts/reports/).",
     )
 
+    # Configuration file
+    audit.add_argument(
+        "--config",
+        metavar="PATH",
+        help="Path to a YAML config file. CLI arguments override config values.",
+    )
+
     # Detector / model overrides
     audit.add_argument(
         "--detectors",
@@ -142,19 +149,26 @@ def _run_audit(args: argparse.Namespace) -> int:
         return 1
 
     # --- Build auditor ---
-    regime = args.regime_model
-    if regime == "none":
-        regime = None
-
     auditor_kwargs = {}
     if args.detectors:
         auditor_kwargs["detectors"] = args.detectors
-    if regime is not None or args.regime_model is not None:
+    if args.regime_model is not None:
+        regime = None if args.regime_model == "none" else args.regime_model
         auditor_kwargs["regime_model"] = regime
     if args.window:
         auditor_kwargs["rolling_window"] = args.window
 
-    auditor = SignalDecayAuditor(**auditor_kwargs)
+    if args.config:
+        auditor = SignalDecayAuditor.from_yaml(args.config)
+        # CLI arguments override config file values
+        if args.detectors:
+            auditor.detector_names = args.detectors
+        if args.regime_model is not None:
+            auditor.regime_model = None if args.regime_model == "none" else args.regime_model
+        if args.window:
+            auditor.rolling_window = args.window
+    else:
+        auditor = SignalDecayAuditor(**auditor_kwargs)
     loader = FactorDataLoader()
     output_dir = Path(args.output)
 

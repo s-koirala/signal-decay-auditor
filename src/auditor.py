@@ -297,6 +297,36 @@ class SignalDecayAuditor:
                 f"Valid options: {sorted(_REGIME_MAP.keys())} or None"
             )
 
+    @classmethod
+    def from_yaml(cls, yaml_path: str) -> "SignalDecayAuditor":
+        """Create an auditor from a YAML configuration file.
+
+        Parameters
+        ----------
+        yaml_path : str
+            Path to a YAML configuration file. See
+            ``configs/default.yaml`` for the expected structure.
+
+        Returns
+        -------
+        SignalDecayAuditor
+            Configured auditor instance.
+        """
+        import yaml
+        from pathlib import Path
+
+        with open(Path(yaml_path), "r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f)
+
+        auditor_cfg = cfg.get("auditor", {})
+        return cls(
+            detectors=auditor_cfg.get("detectors"),
+            regime_model=auditor_cfg.get("regime_model"),
+            metrics=auditor_cfg.get("metrics"),
+            rolling_window=auditor_cfg.get("rolling_window", 252),
+            min_segment_size=auditor_cfg.get("min_segment_size", 30),
+        )
+
     # ------------------------------------------------------------------
     # Core audit
     # ------------------------------------------------------------------
